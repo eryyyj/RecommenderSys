@@ -291,7 +291,7 @@ if uploaded_file:
             processed_frames += 1
                 
             # Update progress
-            progress = min(int((cap.get(cv2.CAP_PROP_POS_FRAMES) / cap.get(cv2.CAP_PROP_FRAME_COUNT) * 100), 100)
+            progress = min(int((cap.get(cv2.CAP_PROP_POS_FRAMES) / cap.get(cv2.CAP_PROP_FRAME_COUNT) * 100), 100))
             progress_bar.progress(progress)
             status_text.text(f"Processing frame {total_frames}...")
             
