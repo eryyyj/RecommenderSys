@@ -7,7 +7,7 @@ import time
 import os
 
 # Configuration - Read from secrets
-HF_API_TOKEN = HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
+HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
 # Placeholder for object detection
@@ -87,12 +87,76 @@ def generate_osh_recommendation(violations):
     except Exception as e:
         return f"⚠️ API Error: {str(e)}"
 
+# Generate chat responses using Hugging Face API
+def generate_chat_response(user_input):
+    """
+    Generate a response to user chat input using the LLM model
+    """
+    if not user_input or user_input.strip() == "":
+        return "Please enter a question about Philippine OSH laws."
+    
+    # System prompt to guide the assistant
+    system_prompt = "You are an AI assistant specialized in Occupational Safety and Health (OSH) laws in the Philippines. Provide accurate, concise, and helpful information based on the Philippine OSH standards (RA 11058, DOLE D.O. 198-18)."
+    
+    # Format the prompt for the model
+    prompt = f"""
+    <|system|>
+    {system_prompt}</s>
+    <|user|>
+    {user_input}</s>
+    <|assistant|>
+    """
+    
+    if not HF_API_TOKEN:
+        return "⚠️ Error: Hugging Face API token not configured."
+    
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 500,
+            "temperature": 0.6,
+            "top_p": 0.9,
+            "repetition_penalty": 1.1
+        }
+    }
+    
+    try:
+        response = requests.post(
+            f"https://api-inference.huggingface.co/models/{MODEL_NAME}",
+            headers=headers,
+            json=payload,
+            timeout=90
+        )
+        
+        if response.status_code != 200:
+            return f"⚠️ API Error ({response.status_code}): {response.text[:200]}"
+            
+        result = response.json()
+        
+        if isinstance(result, list) and len(result) > 0:
+            if 'generated_text' in result[0]:
+                # Extract only the assistant's response
+                full_response = result[0]['generated_text']
+                # Find the start of the assistant's response
+                start_idx = full_response.find("<|assistant|>") + len("<|assistant|>")
+                return full_response[start_idx:].strip()
+        
+        return "⚠️ Sorry, I couldn't generate a response. Please try again."
+    
+    except Exception as e:
+        return f"⚠️ API Error: {str(e)}"
+
 # Streamlit App Configuration
 st.set_page_config(
     page_title="PPE Compliance Inspector",
     page_icon="🛡️",
     layout="wide"
 )
+
+# Initialize chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # Main App
 st.title("🛡️ PPE Compliance Inspector")
@@ -157,6 +221,44 @@ st.info("""
     3. Use cloud-based video processing services
 """)
 
+# Chatbot Section
+st.divider()
+st.subheader("💬 OSH Law Chat Assistant")
+
+# Display chat messages
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat input
+user_input = st.chat_input("Ask about Philippine OSH laws...")
+
+if user_input:
+    # Add user message to chat history
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(user_input)
+    
+    # Generate and display assistant response
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        message_placeholder.markdown("▌")
+        
+        with st.spinner("Thinking..."):
+            response = generate_chat_response(user_input)
+        
+        message_placeholder.markdown(response)
+    
+    # Add assistant response to chat history
+    st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+# Clear chat button
+if st.button("Clear Chat History", key="clear_chat"):
+    st.session_state.chat_history = []
+    st.experimental_rerun()
+
 # Resources Section
 st.sidebar.title("🇵🇭 Philippine OSH Resources")
 st.sidebar.markdown("""
@@ -179,6 +281,18 @@ st.sidebar.markdown("""
     *Note: For formal compliance assessments, consult a certified OSH practitioner.*
 """)
 
+# Chat tips
+st.sidebar.divider()
+st.sidebar.subheader("💡 Chat Assistant Tips")
+st.sidebar.markdown("""
+    Ask about:
+    - Hairnet requirements under RA 11058
+    - Penalties for PPE violations
+    - OSH training requirements
+    - Glove specifications for food handling
+    - DOLE inspection procedures
+""")
+
 # Deployment Info
 st.sidebar.divider()
 if st.sidebar.button("🔄 Check Deployment Status"):
@@ -195,4 +309,4 @@ st.caption("""
     *Disclaimer: This application provides general guidance only. Recommendations are AI-generated 
     and should be verified by qualified OSH professionals. Always refer to the latest DOLE regulations.*
 """)
-st.caption(f"App version: 1.0 | Last updated: {time.strftime('%Y-%m-%d')}")
+st.caption(f"App version: 1.1 | Last updated: {time.strftime('%Y-%m-%d')}")
