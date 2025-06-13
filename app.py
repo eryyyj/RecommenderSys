@@ -8,7 +8,7 @@ import os
 
 # Configuration - Read from secrets
 HF_API_TOKEN = HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
-MODEL_NAME = "mistralai/Mistral-7B-v0.1"
+MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
 # Placeholder for object detection
 def detect_ppe(image_np):
