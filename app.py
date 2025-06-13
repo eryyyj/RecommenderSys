@@ -5,23 +5,54 @@ import numpy as np
 from PIL import Image
 import time
 import os
+from ultralytics import YOLO  # Import Ultralytics YOLO
 
 # Configuration - Read from secrets
 HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
-# Placeholder for object detection
+# Load YOLO model - cached to load only once
+@st.cache_resource
+def load_yolo_model():
+    try:
+        # Load your trained YOLO model
+        model = YOLO('bantai_obj_det_model.pt')  # Update with your model path
+        return model
+    except Exception as e:
+        st.error(f"⚠️ Error loading YOLO model: {str(e)}")
+        return None
+
+# Load model at startup
+yolo_model = load_yolo_model()
+
+# Object detection function using YOLO
 def detect_ppe(image_np):
     """
-    Simulated detection function - replace with your actual model
+    Detect PPE using YOLO model
     Returns: (hairnet_detected: bool, gloves_detected: bool)
     """
-    # Convert to HSV for color-based simulation
-    hsv = cv2.cvtColor(image_np, cv2.COLOR_BGR2HSV)
+    if yolo_model is None:
+        return False, False
     
-    # Simple color-based detection simulation
-    hairnet_detected = np.mean(hsv[:, :, 1]) > 50  # Random condition
-    gloves_detected = np.mean(hsv[:, :, 2]) > 100   # Random condition
+    # Run inference
+    results = yolo_model.predict(image_np, conf=0.5)  # Adjust confidence as needed
+    
+    # Initialize detection flags
+    hairnet_detected = False
+    gloves_detected = False
+    
+    # Process results
+    for result in results:
+        # Check for detected classes
+        for box in result.boxes:
+            class_id = int(box.cls)
+            class_name = yolo_model.names[class_id]
+            
+            # Update detection flags based on class names
+            if class_name == "hairnet":
+                hairnet_detected = True
+            elif class_name == "gloves":
+                gloves_detected = True
     
     return hairnet_detected, gloves_detected
 
@@ -168,58 +199,143 @@ st.markdown("""
 # File Upload Section
 with st.expander("📤 Upload Media", expanded=True):
     uploaded_file = st.file_uploader(
-        "Upload workplace image",
-        type=["jpg", "jpeg", "png"],
-        help="Supported formats: JPG, PNG"
+        "Upload workplace image or video",
+        type=["jpg", "jpeg", "png", "mp4"],
+        help="Supported formats: Images (JPG, PNG), Videos (MP4)"
     )
 
 # Processing Section
-if uploaded_file and uploaded_file.type.startswith("image"):
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Workplace Image", use_column_width=True)
+if uploaded_file:
+    # Image Processing
+    if uploaded_file.type.startswith("image"):
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Workplace Image", use_column_width=True)
+        
+        if st.button("🔍 Analyze Compliance", type="primary"):
+            if yolo_model is None:
+                st.error("YOLO model not loaded. Unable to process.")
+                st.stop()
+                
+            with st.spinner("Detecting PPE compliance..."):
+                # Convert to OpenCV format
+                img_np = np.array(image)
+                img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                
+                # Run detection
+                hairnet, gloves = detect_ppe(img_np)
+                
+                # Display results
+                col1, col2 = st.columns(2)
+                col1.metric("Hairnet Compliance", 
+                            "✅ COMPLIANT" if hairnet else "❌ VIOLATION", 
+                            delta=None,
+                            help="Detects proper hairnet usage")
+                col2.metric("Gloves Compliance", 
+                            "✅ COMPLIANT" if gloves else "❌ VIOLATION", 
+                            delta=None,
+                            help="Detects proper glove usage")
+                
+                # Generate recommendations
+                violations = []
+                if not hairnet: violations.append("no hairnet")
+                if not gloves: violations.append("no gloves")
+                
+                st.divider()
+                st.subheader("📜 OSH Compliance Report (Philippines)")
+                
+                with st.spinner("Generating legal recommendations..."):
+                    report = generate_osh_recommendation(violations)
+                    st.markdown(report)
     
-    if st.button("🔍 Analyze Compliance", type="primary"):
-        with st.spinner("Detecting PPE compliance..."):
-            # Convert to OpenCV format
-            img_np = np.array(image)
-            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    # Video Processing
+    elif uploaded_file.type.startswith("video"):
+        if yolo_model is None:
+            st.error("YOLO model not loaded. Unable to process video.")
+            st.stop()
             
-            # Run detection
-            hairnet, gloves = detect_ppe(img_np)
+        st.info("Video processing started. This may take several minutes...")
+        
+        # Save video to temp file
+        temp_video = f"temp_{uploaded_file.name}"
+        with open(temp_video, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        # Initialize analysis
+        hairnet_frames = 0
+        gloves_frames = 0
+        total_frames = 0
+        processed_frames = 0
+        
+        # Display placeholder for processing updates
+        status_text = st.empty()
+        progress_bar = st.progress(0)
+        
+        # Process video
+        cap = cv2.VideoCapture(temp_video)
+        frame_skip = 5  # Process every 5th frame to reduce computation
+        
+        # Create a placeholder for the video preview
+        video_placeholder = st.empty()
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            total_frames += 1
             
-            # Display results
-            col1, col2 = st.columns(2)
-            col1.metric("Hairnet Compliance", 
-                        "✅ COMPLIANT" if hairnet else "❌ VIOLATION", 
-                        delta=None,
-                        help="Detects proper hairnet usage")
-            col2.metric("Gloves Compliance", 
-                        "✅ COMPLIANT" if gloves else "❌ VIOLATION", 
-                        delta=None,
-                        help="Detects proper glove usage")
+            # Process only every nth frame
+            if total_frames % frame_skip != 0:
+                continue
+                
+            processed_frames += 1
+                
+            # Update progress
+            progress = min(int((cap.get(cv2.CAP_PROP_POS_FRAMES) / cap.get(cv2.CAP_PROP_FRAME_COUNT) * 100), 100)
+            progress_bar.progress(progress)
+            status_text.text(f"Processing frame {total_frames}...")
             
-            # Generate recommendations
-            violations = []
-            if not hairnet: violations.append("no hairnet")
-            if not gloves: violations.append("no gloves")
+            # Detect PPE
+            hairnet, gloves = detect_ppe(frame)
             
-            st.divider()
-            st.subheader("📜 OSH Compliance Report (Philippines)")
+            if hairnet: hairnet_frames += 1
+            if gloves: gloves_frames += 1
             
-            with st.spinner("Generating legal recommendations..."):
-                report = generate_osh_recommendation(violations)
-                st.markdown(report)
-
-# Video Processing Section (Placeholder)
-st.divider()
-st.subheader("Video Processing")
-st.warning("Video processing requires additional implementation and resources")
-st.info("""
-    For video processing capabilities:
-    1. Upgrade to Streamlit Premium for more resources
-    2. Implement frame-by-frame processing
-    3. Use cloud-based video processing services
-""")
+            # Display preview every 50 frames
+            if processed_frames % 50 == 0:
+                # Convert back to RGB for display
+                preview_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                video_placeholder.image(preview_frame, caption="Processing Preview", width=600)
+        
+        # Release resources
+        cap.release()
+        os.remove(temp_video)
+        
+        # Calculate compliance rates
+        hairnet_rate = (hairnet_frames / processed_frames) * 100 if processed_frames > 0 else 0
+        gloves_rate = (gloves_frames / processed_frames) * 100 if processed_frames > 0 else 0
+        
+        # Display results
+        st.success("✅ Video analysis complete!")
+        col1, col2 = st.columns(2)
+        col1.metric("Hairnet Compliance", f"{hairnet_rate:.1f}%", 
+                   delta_color="inverse", 
+                   help="Percentage of frames with hairnet detected")
+        col2.metric("Gloves Compliance", f"{gloves_rate:.1f}%", 
+                   delta_color="inverse",
+                   help="Percentage of frames with gloves detected")
+        
+        # Generate recommendations
+        violations = []
+        if hairnet_rate < 95: violations.append("inconsistent hairnet usage")
+        if gloves_rate < 95: violations.append("inconsistent glove usage")
+        
+        st.divider()
+        st.subheader("📜 OSH Compliance Report (Philippines)")
+        
+        with st.spinner("Generating legal recommendations..."):
+            report = generate_osh_recommendation(violations)
+            st.markdown(report)
 
 # Chatbot Section
 st.divider()
@@ -300,6 +416,10 @@ if st.sidebar.button("🔄 Check Deployment Status"):
         import streamlit as st_module
         st.sidebar.success(f"Streamlit v{st_module.__version__}")
         st.sidebar.info(f"Python {os.sys.version}")
+        if yolo_model:
+            st.sidebar.success("YOLO model loaded successfully")
+        else:
+            st.sidebar.error("YOLO model not loaded")
     except:
         st.sidebar.error("Version info unavailable")
 
@@ -309,4 +429,4 @@ st.caption("""
     *Disclaimer: This application provides general guidance only. Recommendations are AI-generated 
     and should be verified by qualified OSH professionals. Always refer to the latest DOLE regulations.*
 """)
-st.caption(f"App version: 1.1 | Last updated: {time.strftime('%Y-%m-%d')}")
+st.caption(f"App version: 2.0 | Last updated: {time.strftime('%Y-%m-%d')}")
