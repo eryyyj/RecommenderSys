@@ -7,7 +7,7 @@ import time
 import os
 
 # Configuration - Read from secrets
-HF_API_TOKEN = st.secrets.get("HF_API_TOKEN", os.getenv("HF_API_TOKEN"))
+HF_API_TOKEN = HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
 MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # Placeholder for object detection
