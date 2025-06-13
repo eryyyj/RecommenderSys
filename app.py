@@ -1,22 +1,25 @@
-import streamlit as st
-import requests
+import os
+import time
 import cv2
 import numpy as np
+import requests
 from PIL import Image
-import time
-import os
-from ultralytics import YOLO  # Import Ultralytics YOLO
+from ultralytics import YOLO
+import streamlit as st
 
-# Configuration - Read from secrets
+st.set_page_config(
+    page_title="PPE Compliance Inspector",
+    page_icon="🛡️",
+    layout="wide"
+)
+
 HF_API_TOKEN = st.secrets["secrets"]["HF_API_TOKEN"].strip()
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
-# Load YOLO model - cached to load only once
 @st.cache_resource
 def load_yolo_model():
     try:
-        # Load your trained YOLO model
-        model = YOLO('bantai_obj_det_model.pt')  # Update with your model path
+        model = YOLO('bantai_obj_det_model.pt')
         return model
     except Exception as e:
         st.error(f"⚠️ Error loading YOLO model: {str(e)}")
