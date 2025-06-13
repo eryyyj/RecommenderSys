@@ -181,13 +181,6 @@ def generate_chat_response(user_input):
     except Exception as e:
         return f"⚠️ API Error: {str(e)}"
 
-# Streamlit App Configuration
-st.set_page_config(
-    page_title="PPE Compliance Inspector",
-    page_icon="🛡️",
-    layout="wide"
-)
-
 # Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
