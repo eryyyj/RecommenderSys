@@ -32,8 +32,9 @@ def generate_osh_recommendation(violations):
     
     violations_text = " and ".join(violations)
     
+    # Updated prompt for better compatibility
     prompt = f"""
-    [INST] As an OSH compliance officer in the Philippines, create a formal report for PPE violations: {violations_text}.
+    As an OSH compliance officer in the Philippines, create a formal report for PPE violations: {violations_text}.
     
     Structure your response:
     1. Relevant Philippine OSH Law sections (cite RA 11058 and DOLE D.O. 198-18 specifically)
@@ -42,7 +43,7 @@ def generate_osh_recommendation(violations):
     4. Preventive measures
     5. Training recommendations
     
-    Use formal tone and focus exclusively on Philippine legal context. [/INST]
+    Use formal tone and focus exclusively on Philippine legal context.
     """
     
     if not HF_API_TOKEN:
@@ -63,21 +64,25 @@ def generate_osh_recommendation(violations):
             f"https://api-inference.huggingface.co/models/{MODEL_NAME}",
             headers=headers,
             json=payload,
-            timeout=120  # Longer timeout for Hugging Face
+            timeout=120
         )
         
+        if response.status_code == 404:
+            return "⚠️ Model not available via API. Try a different model in code configuration."
+        
         if response.status_code != 200:
-            return f"⚠️ API Error ({response.status_code}): {response.text}"
+            return f"⚠️ API Error ({response.status_code}): {response.text[:200]}..."
             
         result = response.json()
         
-        if isinstance(result, dict) and 'error' in result:
-            return f"⚠️ Model Error: {result['error']}"
-        
         if isinstance(result, list) and len(result) > 0:
-            return result[0].get('generated_text', '').split('[/INST]')[-1].strip()
+            # Handle different response formats
+            if 'generated_text' in result[0]:
+                return result[0]['generated_text'].strip()
+            elif 'text' in result[0]:
+                return result[0]['text'].strip()
         
-        return "⚠️ Unexpected response format from API"
+        return f"⚠️ Unexpected response format: {str(result)[:300]}"
     
     except Exception as e:
         return f"⚠️ API Error: {str(e)}"
