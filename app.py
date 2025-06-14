@@ -1,4 +1,5 @@
 import os
+os.environ['TORCH_FORCE_WEIGHTS_ONLY'] = '0' 
 import time
 import cv2
 import numpy as np
